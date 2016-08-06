@@ -16,17 +16,16 @@
 package org.wso2.carbon.ml.rest.api;
 
 import java.io.*;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import javax.ws.rs.*;
-import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.StreamingOutput;
-import javax.ws.rs.core.UriInfo;
 
 import com.owlike.genson.Genson;
 import org.apache.commons.logging.Log;
@@ -34,6 +33,10 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.cxf.jaxrs.ext.multipart.Multipart;
 import org.apache.hadoop.fs.InvalidRequestException;
 import org.apache.http.HttpHeaders;
+import org.codehaus.jackson.JsonGenerator;
+import org.codehaus.jackson.map.ObjectMapper;
+import org.json.JSONArray;
+import org.json.JSONObject;
 import org.wso2.carbon.context.PrivilegedCarbonContext;
 import org.wso2.carbon.ml.commons.constants.MLConstants;
 import org.wso2.carbon.ml.commons.domain.MLModel;
@@ -50,6 +53,9 @@ import org.wso2.carbon.ml.core.utils.MLCoreServiceValueHolder;
 import org.wso2.carbon.ml.core.utils.MLUtils;
 import org.wso2.carbon.ml.rest.api.model.MLErrorBean;
 import org.wso2.carbon.ml.rest.api.model.MLResponseBean;
+import org.wso2.carbon.ml.rest.api.neuralNetworks.FeedForwardNetwork;
+import org.wso2.carbon.ml.rest.api.neuralNetworks.HiddenLayerDetails;
+import org.wso2.carbon.ml.rest.api.neuralNetworks.OutputLayerDetails;
 
 /**
  * This class is to handle REST verbs GET , POST and DELETE.
@@ -239,8 +245,8 @@ public class ModelApiV20 extends MLRestAPI {
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.MULTIPART_FORM_DATA)
     public Response predict(@Multipart("modelId") long modelId, @Multipart("dataFormat") String dataFormat,
-            @Multipart("file") InputStream inputStream, @QueryParam("percentile") double percentile,
-            @QueryParam("skipDecoding") boolean skipDecoding) {
+                            @Multipart("file") InputStream inputStream, @QueryParam("percentile") double percentile,
+                            @QueryParam("skipDecoding") boolean skipDecoding) {
 
         PrivilegedCarbonContext carbonContext = PrivilegedCarbonContext.getThreadLocalCarbonContext();
         int tenantId = carbonContext.getTenantId();
@@ -290,8 +296,8 @@ public class ModelApiV20 extends MLRestAPI {
     @Produces(MediaType.APPLICATION_OCTET_STREAM)
     @Consumes(MediaType.MULTIPART_FORM_DATA)
     public Response streamingPredqict(@Multipart("modelId") long modelId, @Multipart("dataFormat") String dataFormat,
-            @Multipart("columnHeader") String columnHeader, @Multipart("file") InputStream inputStream,
-            @QueryParam("percentile") double percentile, @QueryParam("skipDecoding") boolean skipDecoding) {
+                                      @Multipart("columnHeader") String columnHeader, @Multipart("file") InputStream inputStream,
+                                      @QueryParam("percentile") double percentile, @QueryParam("skipDecoding") boolean skipDecoding) {
 
         PrivilegedCarbonContext carbonContext = PrivilegedCarbonContext.getThreadLocalCarbonContext();
         int tenantId = carbonContext.getTenantId();
@@ -355,7 +361,7 @@ public class ModelApiV20 extends MLRestAPI {
     @Produces("application/json")
     @Consumes("application/json")
     public Response predict(@PathParam("modelId") long modelId, List<String[]> data,
-            @QueryParam("percentile") double percentile, @QueryParam("skipDecoding") boolean skipDecoding) {
+                            @QueryParam("percentile") double percentile, @QueryParam("skipDecoding") boolean skipDecoding) {
 
         PrivilegedCarbonContext carbonContext = PrivilegedCarbonContext.getThreadLocalCarbonContext();
         int tenantId = carbonContext.getTenantId();
@@ -565,8 +571,8 @@ public class ModelApiV20 extends MLRestAPI {
     @Path("/{modelId}/product-recommendations")
     @Produces("application/json")
     public Response getProductRecommendations(@PathParam("modelId") long modelId,
-            @QueryParam("user-id") int userId,
-            @QueryParam("no-of-products") int noOfProducts) {
+                                              @QueryParam("user-id") int userId,
+                                              @QueryParam("no-of-products") int noOfProducts) {
 
         PrivilegedCarbonContext carbonContext = PrivilegedCarbonContext.getThreadLocalCarbonContext();
         int tenantId = carbonContext.getTenantId();
@@ -595,8 +601,8 @@ public class ModelApiV20 extends MLRestAPI {
     @Path("/{modelId}/user-recommendations")
     @Produces("application/json")
     public Response getUserRecommendations(@PathParam("modelId") long modelId,
-            @QueryParam("product-id") int productId,
-            @QueryParam("no-of-users") int noOfUsers) {
+                                           @QueryParam("product-id") int productId,
+                                           @QueryParam("no-of-users") int noOfUsers) {
 
         PrivilegedCarbonContext carbonContext = PrivilegedCarbonContext.getThreadLocalCarbonContext();
         int tenantId = carbonContext.getTenantId();
@@ -612,6 +618,90 @@ public class ModelApiV20 extends MLRestAPI {
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(new MLErrorBean(e.getMessage()))
                     .build();
         }
+    }
+
+////////////////////////////////////////////////Lakini's Code/////////////////////////////////////////////////////////
+    /**
+     * Post method to run the Neural Network.
+     * @return an JSON object with Statistics.
+     */
+    @POST
+    @Path("/neural-network")
+    @Consumes("application/json")
+    @Produces("application/json")
+
+    public Response getNeuralNetwork(String networkDetails) {
+        try {
+            String statistics = "";
+            String statString="";
+            JsonGenerator y=null;
+            JSONObject network_details = new JSONObject(networkDetails);
+
+            System.out.println(network_details.toString());
+            String network_name = network_details.getString("networkName");
+            long seed = network_details.getLong("seed");
+            double learningRate = network_details.getDouble("learningRate");
+            int bachSize = network_details.getInt("batchSize");
+            double nepoches = network_details.getDouble("nepoches");
+            int iterations = network_details.getInt("iteration");
+            String optimizationAlgorithms = network_details.getString("optimizationAlgorithms");
+            String updater = network_details.getString("updater");
+            double momentum = network_details.getDouble("momentum");
+            boolean pretrain = network_details.getBoolean("pretrain");
+            boolean backprop = network_details.getBoolean("backprop");
+            int noHiddenLayers= network_details.getInt("hiddenlayerno");
+            int inputLayerNodes= network_details.getInt("inputlayernodes");
+
+//            JSONArray jsonArrayHiddenDetails = new JSONArray(network_details.getJSONArray("hiddenlayerDetails"));
+//            JSONArray jsonArray = new JSONArray(network_details.getString("hiddenlayerDetails"));
+//            JSONArray jsonArrayOutputDetails = new JSONArray(network_details.getJSONArray("outputlayerDetails"));
+
+            JSONArray jsonArrayHiddenDetails = network_details.getJSONArray("hiddenlayerDetails");
+            JSONArray jsonArrayOutputDetails = network_details.getJSONArray("outputlayerDetails");
+
+            System.out.println("JsonArrayHiddenDetails : "+jsonArrayHiddenDetails.toString());
+            System.out.println("JsonArrayOutputDetails : "+jsonArrayOutputDetails.toString());
+
+            List<HiddenLayerDetails> hiddenlayerlist = new ArrayList<>();
+            List<OutputLayerDetails> outputlayerlist = new ArrayList<>();
+
+            for (int i = 0; i < jsonArrayHiddenDetails.length(); i++) {
+                JSONObject hiddenJSONObject = jsonArrayHiddenDetails.getJSONObject(i);
+                int hiddenNodes = hiddenJSONObject.getInt("hiddenlayernodes");
+                String hiddenWeightInit = hiddenJSONObject.getString("hiddenlayerweightinit");
+                String hiddenActivation = hiddenJSONObject.getString("hiddenlayeractivation");
+                hiddenlayerlist.add(new HiddenLayerDetails(hiddenNodes,hiddenWeightInit,hiddenActivation));
+            }
+
+            for (int j = 0; j < jsonArrayOutputDetails.length(); j++) {
+                JSONObject outputJSONObject = jsonArrayOutputDetails.getJSONObject(j);
+                int outputNodes = outputJSONObject.getInt("outputlayernodes");
+                String outputWeightInit = outputJSONObject.getString("outputlayerweightinit");
+                String outputActivation = outputJSONObject.getString("outputlayeractivation");
+                String outputLossfunction = outputJSONObject.getString("outputlaterlossfunction");
+                outputlayerlist.add(new OutputLayerDetails(outputNodes, outputWeightInit, outputActivation, outputLossfunction));
+            }
+
+            FeedForwardNetwork net = new FeedForwardNetwork();
+            statistics = net.createFeedForwardNetwork(seed,learningRate,bachSize,nepoches,iterations,optimizationAlgorithms,updater,momentum,pretrain,backprop,noHiddenLayers,inputLayerNodes,hiddenlayerlist,outputlayerlist);
+            System.out.println(statistics);
+            statString = "{\"accuracy\":\""+statistics+"\"}";
+
+            //JSONObject network_details = new JSONObject(statString);
+
+            ObjectMapper objectMapper = new ObjectMapper();
+            Object statJson = objectMapper.readValue(objectMapper.writeValueAsString(statString), Object.class);
+
+            return Response.ok(statJson).build();
+
+        } catch (Exception e) {
+            String msg = MLUtils.getErrorMsg("Error occurred!!!", e);
+            logger.error(msg, e);
+            System.out.println("Error frm API");
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(new MLErrorBean(e.getMessage()))
+                    .build();
+        }
+
     }
 
 }
