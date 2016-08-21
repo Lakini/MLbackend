@@ -16,12 +16,12 @@
 
 package org.wso2.carbon.ml.rest.api.neuralNetworks;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.canova.api.records.reader.RecordReader;
 import org.canova.api.records.reader.impl.CSVRecordReader;
 import org.canova.api.split.FileSplit;
 import org.deeplearning4j.datasets.canova.RecordReaderDataSetIterator;
-import org.deeplearning4j.datasets.iterator.DataSetIterator;
-import org.deeplearning4j.datasets.iterator.impl.MnistDataSetIterator;
 import org.deeplearning4j.eval.Evaluation;
 import org.deeplearning4j.nn.api.OptimizationAlgorithm;
 import org.deeplearning4j.nn.conf.MultiLayerConfiguration;
@@ -38,21 +38,17 @@ import org.nd4j.linalg.dataset.DataSet;
 import org.nd4j.linalg.dataset.SplitTestAndTrain;
 import org.nd4j.linalg.lossfunctions.LossFunctions.LossFunction;
 import org.wso2.carbon.context.PrivilegedCarbonContext;
-import org.wso2.carbon.ml.commons.domain.MLModelData;
+import org.wso2.carbon.ml.commons.domain.MLDatasetVersion;
 import org.wso2.carbon.ml.core.exceptions.MLAnalysisHandlerException;
 import org.wso2.carbon.ml.core.exceptions.MLDataProcessingException;
-import org.wso2.carbon.ml.core.exceptions.MLModelHandlerException;
 import org.wso2.carbon.ml.core.impl.MLAnalysisHandler;
 import org.wso2.carbon.ml.core.impl.MLDatasetProcessor;
-import org.wso2.carbon.ml.core.impl.MLModelHandler;
 import org.wso2.carbon.ml.core.utils.MLUtils;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.LineNumberReader;
-import java.util.Collections;
-import java.util.List;
-import java.util.Random;
+import java.util.*;
 
 /**
  * This class is to build the Feed Forward Neural Network algorithm.
@@ -60,16 +56,16 @@ import java.util.Random;
 public class FeedForwardNetwork {
 
     //global variables
-    String mlDataset;
+    String mlDataSet;
     double analysisFraction;
     String analysisResponceVariable ;
     int responseIndex;
     MLDatasetProcessor datasetProcessor = new MLDatasetProcessor() ;
     MLAnalysisHandler mlAnalysisHandler = new MLAnalysisHandler();
-    MLModelHandler mlModelHandler=new MLModelHandler();
     PrivilegedCarbonContext carbonContext = PrivilegedCarbonContext.getThreadLocalCarbonContext();
     int tenantId = carbonContext.getTenantId();
     String userName = carbonContext.getUsername();
+    private static final Log log = LogFactory.getLog(FeedForwardNetwork.class);
 
     /**
      * method to createFeedForwardNetwork.
@@ -81,9 +77,10 @@ public class FeedForwardNetwork {
      * @param hiddenList
      * @param inputLayerNodes
      * @param iterations
-     * @param modelName
+     * @param versionID
      * @param momentum
      * @param nepoches
+     * @param datasetId
      * @param noHiddenLayers
      * @param optimizationAlgorithms
      * @param outputList
@@ -91,19 +88,19 @@ public class FeedForwardNetwork {
      * @param updater
      * @return an String object with evaluation result.
      */
-    public String createFeedForwardNetwork(long seed, double learningRate, int bachSize, double nepoches, int iterations, String optimizationAlgorithms, String updater, double momentum, boolean pretrain, boolean backprop, int noHiddenLayers, int inputLayerNodes, String modelName, int analysisID, List<HiddenLayerDetails> hiddenList, List<OutputLayerDetails> outputList) throws IOException, InterruptedException {
+    public String createFeedForwardNetwork(long seed, double learningRate, int bachSize, double nepoches, int iterations, String optimizationAlgorithms, String updater, double momentum, boolean pretrain, boolean backprop, int noHiddenLayers, int inputLayerNodes, int datasetId, int versionID, int analysisID, List<HiddenLayerDetails> hiddenList, List<OutputLayerDetails> outputList) throws IOException, InterruptedException {
 
         String evaluationDetails = null;
         int numLinesToSkip = 0;
         String delimiter = ",";
-        mlDataset = getDatasetPath(modelName);
+        mlDataSet = getDatasetPath(datasetId,versionID);
         analysisFraction = getAnalysisFraction(analysisID);
         analysisResponceVariable = getAnalysisResponseVariable(analysisID);
         responseIndex = getAnalysisResponseVariableIndex(analysisID);
         SplitTestAndTrain splitTestAndTrain;
         DataSet currentDataset;
-        DataSet trainingset = null;
-        DataSet testingset = null;
+        DataSet trainingSet = null;
+        DataSet testingSet = null;
         INDArray features = null;
         INDArray labels = null;
         INDArray predicted = null;
@@ -115,12 +112,12 @@ public class FeedForwardNetwork {
         //Initialize RecordReader
         RecordReader rr = new CSVRecordReader(numLinesToSkip,delimiter);
         //read the dataset
-        rr.initialize(new FileSplit(new File(mlDataset)));
+        rr.initialize(new FileSplit(new File(mlDataSet)));
         labelIndex = responseIndex;
         numClasses = outputList.get(0).outputNodes;
 
         //Get the fraction to do the spliting data to training and testing
-        FileReader fr = new FileReader(mlDataset);
+        FileReader fr = new FileReader(mlDataSet);
         LineNumberReader lineNumberReader=new LineNumberReader(fr);
         //Get the total number of lines
         lineNumberReader.skip(Long.MAX_VALUE);
@@ -180,19 +177,19 @@ public class FeedForwardNetwork {
         while (trainIter.hasNext()) {
             currentDataset = trainIter.next();
             splitTestAndTrain = currentDataset.splitTestAndTrain(fraction,rnd);
-            trainingset = splitTestAndTrain.getTrain();
-            testingset = splitTestAndTrain.getTest();
-            features= testingset.getFeatureMatrix();
-            labels = testingset.getLabels();
+            trainingSet = splitTestAndTrain.getTrain();
+            testingSet = splitTestAndTrain.getTest();
+            features= testingSet.getFeatureMatrix();
+            labels = testingSet.getLabels();
         }
 
         //Train the model with the training data
         for ( int n = 0; n < nepoches; n++) {
-            model.fit( trainingset);
+            model.fit( trainingSet);
         }
 
         //Do the evaluations of the model including the Accuracy, F1 score etc.
-        System.out.println("Evaluate model....");
+        log.info("Evaluate model....");
         Evaluation eval = new Evaluation(outputList.get(0).outputNodes);
         predicted = model.output(features,false);
 
@@ -205,23 +202,39 @@ public class FeedForwardNetwork {
 
     /**
      * method to map user selected Optimazation Algorithm to OptimizationAlgorithm object.
-     * @param optimizationAlgorithm
+     * @param optimizationAlgorithms
      * @return an OptimizationAlgorithm object.
      */
-    OptimizationAlgorithm mapOptimizationAlgorithm(String optimizationAlgorithm){
+
+    OptimizationAlgorithm mapOptimizationAlgorithm(String optimizationAlgorithms){
 
         OptimizationAlgorithm optimizationAlgo = null;
-        //selecting the relevent Optimization Algorithm
-        if(optimizationAlgorithm.equals("Line_Gradient_Descent"))
-            optimizationAlgo = OptimizationAlgorithm.LINE_GRADIENT_DESCENT;
-        else if(optimizationAlgorithm.equals("Conjugate_Gradient"))
-            optimizationAlgo = OptimizationAlgorithm.CONJUGATE_GRADIENT;
-        else if(optimizationAlgorithm.equals("Hessian_Free"))
-            optimizationAlgo = OptimizationAlgorithm.HESSIAN_FREE;
-        else if(optimizationAlgorithm.equals("LBFGS"))
-            optimizationAlgo = OptimizationAlgorithm.LBFGS;
-        else if(optimizationAlgorithm.equals("Stochastic_Gradient_Descent"))
-            optimizationAlgo = OptimizationAlgorithm.STOCHASTIC_GRADIENT_DESCENT;
+
+        switch (optimizationAlgorithms){
+            case "Line_Gradient_Descent":
+                optimizationAlgo = OptimizationAlgorithm.LINE_GRADIENT_DESCENT;
+                break;
+
+            case "Conjugate_Gradient":
+                optimizationAlgo = OptimizationAlgorithm.CONJUGATE_GRADIENT;
+                break;
+
+            case "Hessian_Free":
+                optimizationAlgo = OptimizationAlgorithm.HESSIAN_FREE;
+                break;
+
+            case "LBFGS":
+                optimizationAlgo = OptimizationAlgorithm.LBFGS;
+                break;
+
+            case "Stochastic_Gradient_Descent":
+                optimizationAlgo = OptimizationAlgorithm.STOCHASTIC_GRADIENT_DESCENT;
+                break;
+
+            default:
+                optimizationAlgo = null;
+                break;
+        }
 
         return optimizationAlgo;
     }
@@ -231,25 +244,48 @@ public class FeedForwardNetwork {
      * @param updater
      * @return an Updater object .
      */
-    Updater mapUpdater(String updater){
+    Updater mapUpdater(String updater) {
 
         Updater updaterAlgo = null;
-        if(updater.equals("sgd"))
-            updaterAlgo = Updater.SGD;
-        else if (updater.equals("adam"))
-            updaterAlgo = Updater.ADAM;
-        else if (updater.equals("adadelta"))
-            updaterAlgo = Updater.ADADELTA;
-        else if (updater.equals("nesterovs"))
-            updaterAlgo = Updater.NESTEROVS;
-        else if (updater.equals("adagrad"))
-            updaterAlgo = Updater.ADAGRAD;
-        else if (updater.equals("rmsprop"))
-            updaterAlgo = Updater.RMSPROP;
-        else if (updater.equals("none"))
-            updaterAlgo = Updater.NONE;
-        else if (updater.equals("custom"))
-            updaterAlgo = Updater.CUSTOM;
+
+        switch (updater) {
+
+            case "sgd":
+                updaterAlgo = Updater.SGD;
+                break;
+
+            case "adam":
+                updaterAlgo = Updater.ADAM;
+                break;
+
+            case "adadelta":
+                updaterAlgo = Updater.ADADELTA;
+                break;
+
+            case "nesterovs":
+                updaterAlgo = Updater.NESTEROVS;
+                break;
+
+            case "adagrad":
+                updaterAlgo = Updater.ADAGRAD;
+                break;
+
+            case "rmsprop":
+                updaterAlgo = Updater.RMSPROP;
+                break;
+
+            case "none":
+                updaterAlgo = Updater.NONE;
+                break;
+
+            case "custom":
+                updaterAlgo = Updater.CUSTOM;
+                break;
+
+            default:
+                updaterAlgo = null;
+                break;
+        }
         return updaterAlgo;
     }
 
@@ -262,25 +298,47 @@ public class FeedForwardNetwork {
 
         LossFunction lossfunctionAlgo = null;
 
-        if(lossFunction.equals("mse"))
-            lossfunctionAlgo = LossFunction.MSE;
-        else if(lossFunction.equals("expll"))
-            lossfunctionAlgo = LossFunction.EXPLL;
-        else if(lossFunction.equals("xent"))
-            lossfunctionAlgo = LossFunction.XENT;
-        else if(lossFunction.equals("mcxent"))
-            lossfunctionAlgo = LossFunction.MCXENT;
-        else if(lossFunction.equals("rmsexent"))
-            lossfunctionAlgo = LossFunction.RMSE_XENT;
-        else if(lossFunction.equals("sqauredloss"))
-            lossfunctionAlgo = LossFunction.SQUARED_LOSS;
-        else if(lossFunction.equals("reconstructioncrossentropy"))
-            lossfunctionAlgo = LossFunction.RECONSTRUCTION_CROSSENTROPY;
-        else if(lossFunction.equals("negetiveloglilelihood"))
-            lossfunctionAlgo = LossFunction.NEGATIVELOGLIKELIHOOD;
-        else if(lossFunction.equals("custom"))
-            lossfunctionAlgo = LossFunction.CUSTOM;
-        return  lossfunctionAlgo;
+        switch (lossFunction){
+            case "mse":
+                lossfunctionAlgo = LossFunction.MSE;
+                break;
+
+            case "expll":
+                lossfunctionAlgo = LossFunction.EXPLL;
+                break;
+
+            case "xent":
+                lossfunctionAlgo = LossFunction.XENT;
+                break;
+
+            case "mcxent":
+                lossfunctionAlgo = LossFunction.MCXENT;
+                break;
+
+            case "rmsexent":
+                lossfunctionAlgo = LossFunction.RMSE_XENT;
+                break;
+
+            case "sqauredloss":
+                lossfunctionAlgo = LossFunction.SQUARED_LOSS;
+                break;
+
+            case "reconstructioncrossentropy":
+                lossfunctionAlgo = LossFunction.RECONSTRUCTION_CROSSENTROPY;
+                break;
+
+            case "negetiveloglilelihood":
+                lossfunctionAlgo = LossFunction.NEGATIVELOGLIKELIHOOD;
+                break;
+
+            case "custom":
+                lossfunctionAlgo = LossFunction.CUSTOM;
+                break;
+
+            default:
+                lossfunctionAlgo = null;
+        }
+        return lossfunctionAlgo;
     }
 
     /**
@@ -291,24 +349,45 @@ public class FeedForwardNetwork {
     WeightInit mapWeightInit(String weightinit){
 
         WeightInit weightInitAlgo = null;
-        if(weightinit.equals("Distribution"))
-            weightInitAlgo = WeightInit.DISTRIBUTION;
-        else if(weightinit.equals("Normalized"))
-            weightInitAlgo = WeightInit.NORMALIZED;
-        else if(weightinit.equals("Size"))
-            weightInitAlgo = WeightInit.SIZE;
-        else if(weightinit.equals("Uniform"))
-            weightInitAlgo = WeightInit.UNIFORM;
-        else if(weightinit.equals("Vi"))
-            weightInitAlgo = WeightInit.VI;
-        else if(weightinit.equals("Zero"))
-            weightInitAlgo = WeightInit.ZERO;
-        else if(weightinit.equals("Xavier"))
-            weightInitAlgo = WeightInit.XAVIER;
-        else if(weightinit.equals("RELU"))
-            weightInitAlgo = WeightInit.RELU;
-        else if(weightinit.equals("Normalized"))
-            weightInitAlgo = WeightInit.NORMALIZED;
+
+        switch (weightinit){
+
+            case "Distribution":
+                weightInitAlgo = WeightInit.DISTRIBUTION;
+                break;
+
+            case "Normalized":
+                weightInitAlgo = WeightInit.NORMALIZED;
+                break;
+
+            case "Size":
+                weightInitAlgo = WeightInit.SIZE;
+                break;
+
+            case "Uniform":
+                weightInitAlgo = WeightInit.UNIFORM;
+                break;
+
+            case "Vi":
+                weightInitAlgo = WeightInit.VI;
+                break;
+
+            case "Zero":
+                weightInitAlgo = WeightInit.ZERO;
+                break;
+
+            case "Xavier":
+                weightInitAlgo = WeightInit.XAVIER;
+                break;
+
+            case "RELU":
+                weightInitAlgo = WeightInit.RELU;
+                break;
+
+            default:
+                weightInitAlgo = null;
+                break;
+        }
 
         return weightInitAlgo;
     }
@@ -327,6 +406,7 @@ public class FeedForwardNetwork {
             String msg = MLUtils.getErrorMsg(String.format(
                   "Error occurred while retrieving train data fraction for the analysis [id] %s of tenant [id] %s and [user] %s .",
                    analysisId, tenantId, userName), e);
+            log.info(msg, e);
             return 0.0;
         }
     }
@@ -344,6 +424,7 @@ public class FeedForwardNetwork {
             String msg = MLUtils.getErrorMsg(String.format(
                    "Error occurred while retrieving train data fraction for the analysis [id] %s of tenant [id] %s and [user] %s .",
                     analysisId, tenantId, userName), e);
+            log.error(msg, e);
             return null;
         }
     }
@@ -362,38 +443,69 @@ public class FeedForwardNetwork {
             String msg = MLUtils.getErrorMsg(String.format(
                    "Error occurred while retrieving index of the current response feature for the analysis [id] %s of tenant [id] %s and [user] %s .",
                    analysisId, tenantId, userName), e);
+            log.error(msg, e);
             return -1;
         }
     }
 
-    /**
+    /** =
      * method to get dataset version path.
-     * @param modelName
-     * @return DAtaset version stored path-target path.
+     * @param datasetId
+     * @param versionId
+     * @return Dataset version stored path-target path.
      */
-    String getDatasetPath(String modelName) {
-        PrivilegedCarbonContext carbonContext = PrivilegedCarbonContext.getThreadLocalCarbonContext();
+    String getDatasetPath(int datasetId, int versionId) {
 
+        PrivilegedCarbonContext carbonContext = PrivilegedCarbonContext.getThreadLocalCarbonContext();
         int tenantId = carbonContext.getTenantId();
         String userName = carbonContext.getUsername();
+        String targetPath=null;
+        String version = null;
+        long versionSetId=0;
+
+        //to get the version
         try {
-            MLModelData model = mlModelHandler.getModel(tenantId, userName, modelName);
-            long versionSetId = model.getVersionSetId();
-            String path = datasetProcessor.getVersionset(tenantId, userName,versionSetId).getTargetPath();
+            List<MLDatasetVersion> versionSets = datasetProcessor.getAllDatasetVersions(tenantId, userName, datasetId);
 
-            if (model == null) {
-                return null;
+            Iterator<MLDatasetVersion> versionsetIterator = versionSets.iterator();
+
+            while (versionsetIterator.hasNext()) {
+                MLDatasetVersion mlDatasetVersion= versionsetIterator.next();
+
+                if (mlDatasetVersion.getId()== versionId) {
+                   version = mlDatasetVersion.getVersion();
+                }
+                else{
+                    version = null;
+                }
             }
-            return path;
 
-        } catch (MLModelHandlerException e) {
-            String msg = MLUtils.getErrorMsg(String.format(
-                    "Error occurred while retrieving a model [name] %s of tenant [id] %s and [user] %s .", modelName,
-                    tenantId, userName), e);
-                return null;
         } catch (MLDataProcessingException e) {
-            e.printStackTrace();
-            return null;
+            String msg = MLUtils
+                    .getErrorMsg(
+                            String.format(
+                                    "Error occurred while retrieving all versions of a dataset with the [id] %s of tenant [id] %s and [user] %s .",
+                                    datasetId, tenantId, userName), e);
+            log.error(msg, e);
+            version = null;
         }
+
+        //get target path of the Version
+        try {
+            versionSetId = datasetProcessor.getVersionSetWithVersion(tenantId, userName, datasetId, version).getId();
+            targetPath = datasetProcessor.getVersionset(tenantId, userName,versionSetId).getTargetPath();
+            return targetPath;
+
+        } catch (MLDataProcessingException e) {
+            String msg = MLUtils
+                    .getErrorMsg(
+                            String.format(
+                                    "Error occurred while retrieving the version set with [version] %s of a dataset with the [id] %s of tenant [id] %s and [user] %s .",
+                                    version, datasetId, tenantId, userName), e);
+            log.error(msg, e);
+            targetPath = null;
+        }
+
+        return targetPath;
     }
 }

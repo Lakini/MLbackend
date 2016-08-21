@@ -29,7 +29,6 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.cxf.jaxrs.ext.multipart.Multipart;
 import org.apache.hadoop.fs.InvalidRequestException;
 import org.apache.http.HttpHeaders;
-import org.codehaus.jackson.JsonGenerator;
 import org.codehaus.jackson.map.ObjectMapper;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -635,36 +634,37 @@ public class ModelApiV20 extends MLRestAPI {
         try {
             String statistics = "";
             //read json object
-            JSONObject network_details = new JSONObject(networkDetails);
+            JSONObject networkDetail = new JSONObject(networkDetails);
 
             //convert the json data to pass to the respective neyral network class
-            String network_name = network_details.getString("networkName");
-            long seed = network_details.getLong("seed");
-            double learningRate = network_details.getDouble("learningRate");
-            int bachSize = network_details.getInt("batchSize");
-            double nepoches = network_details.getDouble("nepoches");
-            int iterations = network_details.getInt("iteration");
-            String optimizationAlgorithms = network_details.getString("optimizationAlgorithms");
-            String updater = network_details.getString("updater");
-            double momentum = network_details.getDouble("momentum");
-            boolean pretrain = network_details.getBoolean("pretrain");
-            boolean backprop = network_details.getBoolean("backprop");
-            int noHiddenLayers = network_details.getInt("hiddenlayerno");
-            int inputLayerNodes = network_details.getInt("inputlayernodes");
-            String modelName = network_details.getString("modelName");
-            int analysisID = network_details.getInt("analysisID");
-            JSONArray jsonArrayHiddenDetails = network_details.getJSONArray("hiddenlayerDetails");
-            JSONArray jsonArrayOutputDetails = network_details.getJSONArray("outputlayerDetails");
+            String networkName = networkDetail.getString("networkName");
+            long seed = networkDetail.getLong("seed");
+            double learningRate = networkDetail.getDouble("learningRate");
+            int bachSize = networkDetail.getInt("batchSize");
+            double nepoches = networkDetail.getDouble("nepoches");
+            int iterations = networkDetail.getInt("iteration");
+            String optimizationAlgorithms = networkDetail.getString("optimizationAlgorithms");
+            String updater = networkDetail.getString("updater");
+            double momentum = networkDetail.getDouble("momentum");
+            boolean pretrain = networkDetail.getBoolean("pretrain");
+            boolean backprop = networkDetail.getBoolean("backprop");
+            int noHiddenLayers = networkDetail.getInt("hiddenlayerno");
+            int inputLayerNodes = networkDetail.getInt("inputlayernodes");
+            int datasetId = networkDetail.getInt("datasetId");
+            int versionId = networkDetail.getInt("versionID");
+            int analysisId = networkDetail.getInt("analysisID");
+            JSONArray jsonArrayHiddenDetails = networkDetail.getJSONArray("hiddenlayerDetails");
+            JSONArray jsonArrayOutputDetails = networkDetail.getJSONArray("outputlayerDetails");
 
-            List<HiddenLayerDetails> hiddenlayerlist = new ArrayList<>();
-            List<OutputLayerDetails> outputlayerlist = new ArrayList<>();
+            List<HiddenLayerDetails> hiddenLayerList = new ArrayList<>();
+            List<OutputLayerDetails> outputLayerList = new ArrayList<>();
 
             for (int i = 0; i < jsonArrayHiddenDetails.length(); i++) {
                 JSONObject hiddenJSONObject = jsonArrayHiddenDetails.getJSONObject(i);
                 int hiddenNodes = hiddenJSONObject.getInt("hiddenlayernodes");
                 String hiddenWeightInit = hiddenJSONObject.getString("hiddenlayerweightinit");
                 String hiddenActivation = hiddenJSONObject.getString("hiddenlayeractivation");
-                hiddenlayerlist.add(new HiddenLayerDetails(hiddenNodes, hiddenWeightInit, hiddenActivation));
+                hiddenLayerList.add(new HiddenLayerDetails(hiddenNodes, hiddenWeightInit, hiddenActivation));
             }
 
             for (int j = 0; j < jsonArrayOutputDetails.length(); j++) {
@@ -672,26 +672,24 @@ public class ModelApiV20 extends MLRestAPI {
                 int outputNodes = outputJSONObject.getInt("outputlayernodes");
                 String outputWeightInit = outputJSONObject.getString("outputlayerweightinit");
                 String outputActivation = outputJSONObject.getString("outputlayeractivation");
-                String outputLossfunction = outputJSONObject.getString("outputlaterlossfunction");
-                outputlayerlist.add(new OutputLayerDetails(outputNodes, outputWeightInit, outputActivation, outputLossfunction));
+                String outputLossFunction = outputJSONObject.getString("outputlaterlossfunction");
+                outputLayerList.add(new OutputLayerDetails(outputNodes, outputWeightInit, outputActivation, outputLossFunction));
             }
 
             //make FeedForwardNetwork class object
             FeedForwardNetwork net = new FeedForwardNetwork();
             //Call createFeedForwardNetwork method
-            statistics = net.createFeedForwardNetwork(seed, learningRate, bachSize, nepoches, iterations, optimizationAlgorithms, updater, momentum, pretrain, backprop, noHiddenLayers, inputLayerNodes, modelName, analysisID, hiddenlayerlist, outputlayerlist);
+            statistics = net.createFeedForwardNetwork(seed, learningRate, bachSize, nepoches, iterations, optimizationAlgorithms, updater, momentum, pretrain, backprop, noHiddenLayers, inputLayerNodes, datasetId, versionId, analysisId, hiddenLayerList, outputLayerList);
 
             ObjectMapper objectMapper = new ObjectMapper();
             Object statJson = objectMapper.readValue(objectMapper.writeValueAsString(statistics), Object.class);
-            System.out.println("API Statistics");
-            System.out.println(statJson.toString());
+            logger.info("API Response " + statJson.toString());
 
             return Response.ok(statJson).build();
 
         } catch (Exception e) {
             String msg = MLUtils.getErrorMsg("Error occurred in the server side!!!", e);
             logger.error(msg, e);
-            System.out.println("Error from API");
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(new MLErrorBean(e.getMessage()))
                     .build();
         }
